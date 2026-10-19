@@ -198,6 +198,88 @@ class LoopExecutionEventMessageHandlerTest {
     }
 
     @Test
+    void shouldTerminateLoopInKilledWhenAnIterationIsKilled() throws InternalException {
+        // Given
+        var flow = flowRepository.create(GenericFlow.of(loopFlow()));
+        var execution = Execution.newExecution(flow, Collections.emptyList());
+        String loopTaskRunId = IdUtils.create();
+        var loopTaskRun = loopTaskRun(loopTaskRunId, execution);
+        executionRepository.save(execution.withTaskRunList(List.of(loopTaskRun)));
+        taskOutputService.saveOutputs(
+            loopTaskRun, Map.of(
+                Loop.ITERATION_COUNT_OUTPUT, 3,
+                Loop.RUNNING_ITERATIONS_OUTPUT, 1,
+                Loop.TERMINATED_ITERATIONS_OUTPUT, Collections.emptyMap()
+            )
+        );
+
+        // When
+        var loopRun = new LoopRun(execution, "loop", loopTaskRunId, 0, null, "a", null);
+        var message = new LoopExecutionEvent(loopRun, "sub-execution-id", State.Type.KILLED, null, null);
+        var maybeExecutor = handler.handle(message);
+
+        // Then
+        assertThat(maybeExecutor).isPresent();
+        var taskRun = maybeExecutor.get().getExecution().findTaskRunByTaskRunId(loopTaskRunId);
+        assertThat(taskRun.getState().getCurrent()).isEqualTo(State.Type.KILLED);
+    }
+
+    @Test
+    void shouldIgnoreIterationEventWhenLoopIsAlreadyKilled() throws InternalException {
+        // Given
+        var flow = flowRepository.create(GenericFlow.of(loopFlow()));
+        var execution = Execution.newExecution(flow, Collections.emptyList());
+        String loopTaskRunId = IdUtils.create();
+        var loopTaskRun = loopTaskRun(loopTaskRunId, execution).withState(State.Type.KILLED);
+        executionRepository.save(execution.withTaskRunList(List.of(loopTaskRun)));
+        taskOutputService.saveOutputs(
+            loopTaskRun, Map.of(
+                Loop.ITERATION_COUNT_OUTPUT, 3,
+                Loop.RUNNING_ITERATIONS_OUTPUT, 1,
+                Loop.TERMINATED_ITERATIONS_OUTPUT, Collections.emptyMap()
+            )
+        );
+
+        // When
+        var loopRun = new LoopRun(execution, "loop", loopTaskRunId, 0, null, "a", null);
+        var message = new LoopExecutionEvent(loopRun, "sub-execution-id", State.Type.KILLED, null, null);
+        var maybeExecutor = handler.handle(message);
+
+        // Then
+        assertThat(maybeExecutor).isEmpty();
+        assertThat(taskOutputService.getOutputs(loopTaskRun))
+            .containsEntry(Loop.TERMINATED_ITERATIONS_OUTPUT, Map.of("KILLED", 1))
+            .containsEntry(Loop.RUNNING_ITERATIONS_OUTPUT, 0);
+    }
+
+    @Test
+    void shouldNotStartNextIterationWhenExecutionIsKilling() throws InternalException {
+        // Given
+        var flow = flowRepository.create(GenericFlow.of(loopFlow()));
+        var execution = Execution.newExecution(flow, Collections.emptyList()).withState(State.Type.KILLING);
+        String loopTaskRunId = IdUtils.create();
+        var loopTaskRun = loopTaskRun(loopTaskRunId, execution);
+        executionRepository.save(execution.withTaskRunList(List.of(loopTaskRun)));
+        taskOutputService.saveOutputs(
+            loopTaskRun, Map.of(
+                Loop.ITERATION_COUNT_OUTPUT, 3,
+                Loop.RUNNING_ITERATIONS_OUTPUT, 1,
+                Loop.TERMINATED_ITERATIONS_OUTPUT, Collections.emptyMap()
+            )
+        );
+
+        // When
+        var loopRun = new LoopRun(execution, "loop", loopTaskRunId, 0, null, "a", null);
+        var message = new LoopExecutionEvent(loopRun, "sub-execution-id", State.Type.SUCCESS, null, null);
+        var maybeExecutor = handler.handle(message);
+
+        // Then
+        assertThat(maybeExecutor).isEmpty();
+        assertThat(taskOutputService.getOutputs(loopTaskRun))
+            .containsEntry(Loop.RUNNING_ITERATIONS_OUTPUT, 0);
+    }
+
+    @Test
     void shouldAccumulateTerminatedIterationsPerStateWhenTransmitFailedIsDisabled() throws InternalException {
         // Given — transmitFailed disabled: a failing iteration is counted per-state instead of
         // immediately terminating the loop
