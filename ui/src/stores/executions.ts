@@ -1,7 +1,7 @@
-import {ref, watch} from "vue"
+import {computed, ref, watch} from "vue"
 import {defineStore} from "pinia"
 import {useRoute, type LocationQuery} from "vue-router"
-import {CLUSTER_PREFIX, throttle} from "@kestra-io/design-system"
+import {CLUSTER_PREFIX, isDeepEqual, throttle} from "@kestra-io/design-system"
 import {
     TaskRun,
     useClient,
@@ -154,6 +154,7 @@ export const useExecutionsStore = defineStore("executions", () => {
     const total = ref<number>(0)
     const logs = ref<LogEntry[]>([])
     const subflowsExecutions = ref<Record<string, Execution>>({})
+    const scopedIterations = ref<Record<string, Execution>>({})
     /** Lifecycle-step progress plugins report mid-run, read off the follow-logs stream.
      *  Never reset across navigations: a taskRunId is globally unique. */
     const progressEvents = ref<{taskId: string; taskRunId: string; step: string; timestamp: string}[]>([])
@@ -167,6 +168,7 @@ export const useExecutionsStore = defineStore("executions", () => {
         if(!newExecution){
             flowGraph.value = undefined
             flow.value = undefined
+            scopedIterations.value = {}
             taskRunSelections.value.clear()
         }
     })
@@ -690,8 +692,9 @@ export const useExecutionsStore = defineStore("executions", () => {
             return true
         }
 
-        const nodeExecution = nodeToCheck.executionId === execution.value?.id ? execution.value
-            : Object.values(subflowsExecutions.value).filter(exec => exec.id === nodeToCheck.executionId)?.[0]
+        const executionId = scopedExecutionId(nodeToCheck.uid, scopedIterations.value) ?? nodeToCheck.executionId
+        const nodeExecution = executionId === execution.value?.id ? execution.value
+            : Object.values({...subflowsExecutions.value, ...scopedIterations.value}).find(exec => exec.id === executionId)
 
         if (!nodeExecution) {
             return true
@@ -699,8 +702,6 @@ export const useExecutionsStore = defineStore("executions", () => {
 
         return !nodeExecution.taskRunList?.some(taskRun => taskRun.taskId === nodeToCheck.task?.id)
     }
-
-    let baseExecutionIds: Record<string, string | undefined> = {}
 
     /** Visits nodes shallowest first, so a parent is in `nodeByUid` before a child checks whether it is unused. */
     const loadAugmentedGraph = async (options: GraphOptions) => {
@@ -713,7 +714,6 @@ export const useExecutionsStore = defineStore("executions", () => {
             ?.map(cluster => cluster.uid.replace(CLUSTER_PREFIX, ""))
             ?? []
         const nodeByUid: Record<string, FlowGraphNode> = {}
-        baseExecutionIds = {}
 
         graph.nodes
             .sort((a, b) => a.uid.length - b.uid.length)
@@ -727,13 +727,11 @@ export const useExecutionsStore = defineStore("executions", () => {
                     if(parentSubflow in subflowsExecutions.value) {
                         node.executionId = subflowsExecutions.value[parentSubflow]?.id
                     }
-                    baseExecutionIds[node.uid] = node.executionId
 
                     return
                 }
 
-                baseExecutionIds[node.uid] = options.id
-                node.executionId = scopedExecutionId(node.uid, subflowsExecutions.value) ?? options.id
+                node.executionId = options.id
 
                 if(!node.task && isUnused(nodeByUid, node.uid)) {
                     node.unused = true
@@ -750,16 +748,34 @@ export const useExecutionsStore = defineStore("executions", () => {
         return graph
     }
 
-    const applyScopedExecutionIds = () => {
+    const scopedIterationIds = computed<Record<string, {id: string}>>((previous) => {
+        const next = Object.fromEntries(
+            Object.entries(scopedIterations.value).flatMap(([lane, iteration]) => iteration.id ? [[lane, {id: iteration.id}]] : []),
+        )
+        return previous && isDeepEqual(previous, next) ? previous : next
+    })
+
+    const scopedFlowGraph = computed<FlowGraph | undefined>(() => {
         const graph = flowGraph.value
-        if (!graph) return
-        flowGraph.value = {
+        if (!graph || !Object.keys(scopedIterationIds.value).length) return graph
+        return {
             ...graph,
-            nodes: graph.nodes.map(node => ({
-                ...node,
-                executionId: scopedExecutionId(node.uid, subflowsExecutions.value) ?? baseExecutionIds[node.uid],
-            })),
+            nodes: graph.nodes.map(node => {
+                const executionId = scopedExecutionId(node.uid, scopedIterationIds.value)
+                return executionId ? {...node, executionId} : node
+            }),
         }
+    })
+
+    const graphExecutions = computed<Record<string, Execution>>(() =>
+        Object.fromEntries(
+            [...Object.values(subflowsExecutions.value), ...Object.values(scopedIterations.value)]
+                .flatMap(exec => exec.id ? [[exec.id, exec]] : []),
+        ),
+    )
+
+    const setScopedIterations = (iterations: Record<string, Execution>) => {
+        scopedIterations.value = iterations
     }
 
     const loadNamespaces = () => {
@@ -838,6 +854,9 @@ export const useExecutionsStore = defineStore("executions", () => {
         total,
         logs,
         subflowsExecutions,
+        scopedIterations,
+        scopedFlowGraph,
+        graphExecutions,
         progressEvents,
         flow,
         flowGraph,
@@ -905,7 +924,7 @@ export const useExecutionsStore = defineStore("executions", () => {
         loadLatestExecutions,
         addSubflowExecution,
         removeSubflowExecution,
-        applyScopedExecutionIds,
+        setScopedIterations,
         addProgressEvent,
         resetLogs,
         appendLogs,
