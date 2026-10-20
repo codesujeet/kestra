@@ -9781,6 +9781,14 @@ export type ListLogsFromExecutionData = {
     };
     query?: {
         /**
+         * The current page, enables pagination when set
+         */
+        page?: number | null;
+        /**
+         * The current page size, enables pagination when set (defaults to 10)
+         */
+        size?: number | null;
+        /**
          * Filters
          */
         filters?: Array<QueryFilter> | null;
