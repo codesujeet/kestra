@@ -479,6 +479,7 @@
     import {hasInvalidLabelKeys} from "../../utils/executionLabels"
     import {useToast} from "../../utils/toast"
     import {storageKeys} from "../../utils/constants"
+    import {loadPersistedPageSize, persistPageSize} from "../../composables/usePersistedPageSize"
     import * as Utils from "../../utils/utils"
     import Duration from "../../components/dashboard/sections/table/columns/Duration.vue"
 
@@ -774,7 +775,7 @@
     })
 
     const urlPage = computed(() => Number(route.query.page) || 1)
-    const urlSize = computed(() => Number(route.query.size) || 25)
+    const urlSize = computed(() => route.query.size !== undefined ? Number(route.query.size) || 25 : loadPersistedPageSize())
     const localPage = ref(1)
     const localSize = ref(25)
     const currentPage = computed(() => props.embed ? localPage.value : urlPage.value)
@@ -785,6 +786,7 @@
             localPage.value = page
             localSize.value = size
         } else {
+            persistPageSize(size)
             router.push({query: {...route.query, page: String(page), size: String(size)}})
         }
     }

@@ -7,7 +7,7 @@
         :currentPage="urlPage"
         :pageSize="urlSize"
         :defaultSort="{prop: 'key', order: 'ascending'}"
-        @page-changed="({page, size}: {page: number; size: number}) => router.push({query: {...route.query, page: String(page), size: String(size)}})"
+        @page-changed="({page, size}: {page: number; size: number}) => { persistPageSize(size); router.push({query: {...route.query, page: String(page), size: String(size)}}) }"
         @sort-change="({prop, order}: {prop: string | null; order: string | null}) => router.push({query: {...route.query, sort: `${prop}:${order === 'ascending' ? 'asc' : 'desc'}`}})"
         :no-data-text="hasVisibleColumns ? $t('no_results.kv_pairs') : $t('no_results.all_columns_hidden')"
         :no-data-description="hasVisibleColumns ? undefined : $t('no_results.all_columns_hidden_description')"
@@ -323,6 +323,7 @@
     import * as Utils from "../../utils/utils"
     import {useToast} from "../../utils/toast"
     import {storageKeys} from "../../utils/constants"
+    import {loadPersistedPageSize, persistPageSize} from "../../composables/usePersistedPageSize"
     import {useKvFilter} from "../filter/configurations/kvFilter"
 
     import {dateUtils, dayjs, useTableColumns} from "@kestra-io/design-system"
@@ -407,7 +408,7 @@
     }
 
     const urlPage = computed(() => Number(route.query.page) || 1)
-    const urlSize = computed(() => Number(route.query.size) || 25)
+    const urlSize = computed(() => route.query.size !== undefined ? Number(route.query.size) || 25 : loadPersistedPageSize())
 
     const filterQueryKey = computed(() => {
         const {page: _p, size: _s, sort: _so, ...filters} = route.query

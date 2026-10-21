@@ -119,6 +119,7 @@
     import useRestoreUrl from "../../../composables/useRestoreUrl"
     import {useBlueprintPlugins} from "../../../composables/useBlueprintPlugins"
     import {editorViewTypes} from "../../../utils/constants"
+    import {loadPersistedPageSize, persistPageSize} from "../../../composables/usePersistedPageSize"
     import * as Utils from "../../../utils/utils"
 
     import type {BlueprintTag, BlueprintType, FlowBlueprint} from "../../../stores/blueprints"
@@ -175,7 +176,7 @@
     const selectedTags = ref<string[]>(initSelectedTags())
 
     const urlPage = computed(() => Number(route.query.page) || 1)
-    const urlSize = computed(() => Number(route.query.size) || 25)
+    const urlSize = computed(() => route.query.size !== undefined ? Number(route.query.size) || 25 : loadPersistedPageSize())
     const tagList = computed(() => Object.values(tags.value ?? {}))
     const isEmpty = computed(() => ready.value && !blueprints.value?.length)
 
@@ -195,6 +196,7 @@
     }
 
     const onPageChanged = ({page, size}: {page: number; size: number}) => {
+        persistPageSize(size)
         router.push({query: {...route.query, page: String(page), size: String(size)}})
     }
 

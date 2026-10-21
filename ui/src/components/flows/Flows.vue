@@ -29,7 +29,7 @@
             :currentPage="urlPage"
             :pageSize="urlSize"
             :defaultSort="{prop: 'id', order: 'ascending'}"
-            @page-changed="({page, size}: {page: number; size: number}) => router.push({query: {...route.query, page: String(page), size: String(size)}})"
+            @page-changed="({page, size}: {page: number; size: number}) => { persistPageSize(size); router.push({query: {...route.query, page: String(page), size: String(size)}}) }"
             @ready="ready = true"
             @row-click="onRowClick"
             @sort-change="({prop, order}: {prop: string | null; order: string | null}) => router.push({query: {...route.query, sort: `${prop}:${order === 'descending' ? 'desc' : 'asc'}`}})"
@@ -314,6 +314,7 @@
     import {useI18n} from "vue-i18n"
     import BreakableText from "../BreakableText"
     import {filterHiddenLabels} from "../../utils/labels"
+    import {loadPersistedPageSize, persistPageSize} from "../../composables/usePersistedPageSize"
     import * as YAML_UTILS from "@kestra-io/topology/flow-yaml-utils"
     import {useFlowFilter} from "../filter/configurations/flowFilter"
     import useRestoreUrl from "../../composables/useRestoreUrl"
@@ -538,7 +539,7 @@
     })
 
     const urlPage = computed(() => Number(route.query.page) || 1)
-    const urlSize = computed(() => Number(route.query.size) || 25)
+    const urlSize = computed(() => route.query.size !== undefined ? Number(route.query.size) || 25 : loadPersistedPageSize())
 
     watch(filterQueryKey, () => {
         dataTable.value?.resetAndReload()
