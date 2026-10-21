@@ -63,6 +63,7 @@
     import {Schema} from "./tasks/getTaskComponent"
     import {getPath, setPath, cloneDeep, isDeepEqual} from "@kestra-io/design-system"
     import {
+        BLOCK_COMPONENT_OVERRIDE_INJECTION_KEY,
         FIELDNAME_INJECTION_KEY, PARENT_PATH_INJECTION_KEY,
         BLOCK_SCHEMA_PATH_INJECTION_KEY,
         FULL_SCHEMA_INJECTION_KEY,
@@ -428,15 +429,20 @@
         }
     }, {immediate: true})
 
+    const blockComponentOverride = inject(BLOCK_COMPONENT_OVERRIDE_INJECTION_KEY, undefined)
+
     function onTaskInput(val: PartialNoCodeElement | undefined) {
         taskModel.value = val
+        const task = val
         if(fieldName){
             val = {
                 [fieldName]: val,
             }
         }
 
-        modelValue.value = YAML_UTILS.stringify(removeNullAndUndefined(toRaw(val)))
+        // A field an edition renders with its own component owns its value, empty cells included.
+        const keepAsIs = (key: string) => !fieldName && Boolean(blockComponentOverride?.(key, task))
+        modelValue.value = YAML_UTILS.stringify(removeNullAndUndefined(toRaw(val), keepAsIs))
     }
 
     function onTaskTypeSelect() {
